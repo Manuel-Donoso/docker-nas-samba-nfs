@@ -1,0 +1,57 @@
+services:
+  # Servidor NFS para Linux
+  nfs:
+    image: erichough/nfs-server # Imagen Docker que levanta un servidor NFS
+    container_name: nfs_nas # Nombre del contenedor
+    restart: always # Reinicia automáticamente si se detiene
+    privileged: true # Permite permisos elevados (necesario para NFS)
+    network_mode: host # Usa la red del host (necesario para NFS)
+
+    environment:
+      # Exporta /mnt/nas/manuel a toda la red (*) con permisos de lectura/escritura
+      # all_squash mapea todos los usuarios remotos a anonuid/anongid (1000)
+      - NFS_EXPORT_0=/mnt/nas/manuel *(rw,sync,no_subtree_check,all_squash,anonuid=1000,anongid=1000,crossmnt,insecure)
+
+      # Carpeta pública para invitados
+      - NFS_EXPORT_1=/mnt/nas/invitado *(rw,sync,no_subtree_check,all_squash,anonuid=1000,anongid=1000,crossmnt,insecure)
+
+      # Subcarpetas específicas exportadas (nohide permite verlas como parte del árbol principal)
+      - NFS_EXPORT_2=/mnt/nas/manuel/data *(rw,sync,no_subtree_check,all_squash,anonuid=1000,anongid=1000,nohide,insecure)
+      - NFS_EXPORT_3=/mnt/nas/manuel/Escritorio *(rw,sync,no_subtree_check,all_squash,anonuid=1000,anongid=1000,nohide,insecure)
+      - NFS_EXPORT_4=/mnt/nas/manuel/Descargas *(rw,sync,no_subtree_check,all_squash,anonuid=1000,anongid=1000,nohide,insecure)
+
+    volumes:
+      - /home/carpeta_compartida_red:/mnt/nas:shared # Carpeta principal compartida
+      # Montajes adicionales para asegurar acceso directo a subcarpetas
+      - /home/carpeta_compartida_red/manuel/data:/mnt/nas/manuel/data:shared
+      - /home/manuel/Escritorio:/mnt/nas/manuel/Escritorio:shared
+      - /home/manuel/Descargas:/mnt/nas/manuel/Descargas:shared
+
+  # Servidor Samba para Windows e invitados
+  samba:
+    image: dperson/samba # Imagen Docker con servidor Samba
+    container_name: samba_nas # Nombre del contenedor
+    restart: always # Reinicio automático
+    network_mode: host # Usa red del host (mejor compatibilidad SMB)
+
+    environment:
+      - TZ=Europe/Madrid # Zona horaria
+      - USER=manuel; contrasena # Usuario Samba (usuario;contraseña)
+
+    volumes:
+      - /home/carpeta_compartida_red:/mnt/nas # Carpeta raíz compartida
+      # Subcarpetas montadas dentro del contenedor
+      - /home/manuel/data:/mnt/nas/manuel/data
+      - /home/manuel/Escritorio:/mnt/nas/manuel/Escritorio
+      - /home/manuel/Descargas:/mnt/nas/manuel/Descargas
+
+    command: >
+      -u "manuel;contrasena"                      # Crea usuario Samba
+      -g "guest account = manuel"                 # Define usuario invitado
+      -s "Privado-Manuel;/mnt/nas/manuel;no;no;no;manuel"
+      # Share privada: nombre; ruta; guest?; solo lectura?; visible?; usuarios permitidos
+
+      -s "Publico-Invitado;/mnt/nas/invitado;yes;no;yes;all"
+      # Share pública: acceso invitado sin contraseña
+
+      -p                                          # Mantiene el contenedor en ejecución
